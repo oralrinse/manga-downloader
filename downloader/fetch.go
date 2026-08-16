@@ -3,6 +3,7 @@
 package downloader
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -125,5 +126,14 @@ func fetchFileOnce(params http.RequestParams) (data []byte, err error) {
 	defer body.Close()
 
 	data, err = io.ReadAll(body)
+	if err != nil {
+		return
+	}
+	// A 200 with an empty body is still a failed download (a CDN can answer
+	// with zero bytes on a transient blip). Treat it as an error so FetchFile's
+	// retry loop kicks in instead of silently packing a 0-byte page.
+	if len(data) == 0 {
+		err = errors.New("empty response body")
+	}
 	return
 }

@@ -146,6 +146,33 @@ func TestFetchFile_AppliesTransform(t *testing.T) {
 	}
 }
 
+func TestFetchFile_RetriesOnEmptyBody(t *testing.T) {
+	withFastRetryDelay(t)
+
+	var requests int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&requests, 1) == 1 {
+			// 200 OK with no body, as a CDN can serve on a transient blip
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("full-body"))
+	}))
+	defer server.Close()
+
+	file, err := FetchFile(mangahttp.RequestParams{URL: server.URL}, 1, 1, nil)
+	if err != nil {
+		t.Fatalf("expected no error after retry, got: %v", err)
+	}
+	if string(file.Data) != "full-body" {
+		t.Errorf("expected file data %q, got %q", "full-body", file.Data)
+	}
+	if got := atomic.LoadInt32(&requests); got != 2 {
+		t.Errorf("expected 2 requests (empty body re-fetches), got %d", got)
+	}
+}
+
 func TestFetchFile_RetriesOnTransformFailure(t *testing.T) {
 	withFastRetryDelay(t)
 
